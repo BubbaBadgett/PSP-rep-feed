@@ -1,7 +1,9 @@
-// Vercel serverless function. Keeps RESEND_API_KEY server-side — the
-// browser never sees it. Sends whatever the composer captured (text body,
-// or a photo/PDF as an attachment) to the configured Canals inbox address
-// via the Resend REST API directly (no SDK dependency needed).
+// Vercel serverless function. Sends whatever the composer captured (text
+// body, or a photo/PDF as an attachment) to the configured Canals inbox
+// address through the user's own Gmail account via SMTP + an App Password
+// (GMAIL_USER / GMAIL_APP_PASSWORD), kept server-side only.
+
+import nodemailer from "nodemailer";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -21,15 +23,15 @@ export default async function handler(req, res) {
     return;
   }
 
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM_EMAIL;
-  if (!apiKey || !from) {
+  const gmailUser = process.env.GMAIL_USER;
+  const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+  if (!gmailUser || !gmailAppPassword) {
     res.status(500).json({ error: "Email sending isn't configured on the server yet." });
     return;
   }
 
   const isAttachment = typeof data === "string" && data.startsWith("data:");
-  const payload = { from, to };
+  const mail = { from: `PSP Canals Capture <${gmailUser}>`, to };
 
   if (isAttachment) {
     const match = /^data:([^;]+);base64,(.*)$/s.exec(data);
@@ -39,32 +41,22 @@ export default async function handler(req, res) {
     }
     const [, contentType, base64] = match;
     const ext = contentType.split("/")[1] || "bin";
-    payload.subject = `Canals order — ${label || `capture.${ext}`}`;
-    payload.text = "New Canals order captured in the field. See attachment.";
-    payload.attachments = [{ filename: label || `capture.${ext}`, content: base64 }];
+    mail.subject = `Canals order — ${label || `capture.${ext}`}`;
+    mail.text = "New Canals order captured in the field. See attachment.";
+    mail.attachments = [{ filename: label || `capture.${ext}`, content: base64, encoding: "base64" }];
   } else {
-    payload.subject = "Canals order — typed/spoken";
-    payload.text = data;
+    mail.subject = "Canals order — typed/spoken";
+    mail.text = data;
   }
 
   try {
-    const resendRes = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: { user: gmailUser, pass: gmailAppPassword },
     });
-
-    if (!resendRes.ok) {
-      const errBody = await resendRes.text().catch(() => "");
-      res.status(502).json({ error: `Resend rejected the email${errBody ? `: ${errBody}` : ""}.` });
-      return;
-    }
-
+    await transporter.sendMail(mail);
     res.status(200).json({ ok: true });
-  } catch {
-    res.status(502).json({ error: "Could not reach the email service. Check your connection and retry." });
+  } catch (err) {
+    res.status(502).json({ error: `Could not send via Gmail: ${err.message || "unknown error"}. Check the App Password and retry.` });
   }
 }
