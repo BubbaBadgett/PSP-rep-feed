@@ -35,12 +35,13 @@ const FONTS = `
 `;
 
 const STORAGE_KEY = "canals-inbox-email";
+const DEFAULT_INBOX_EMAIL = "new@orders.canals.ai";
 
 function loadInboxEmail() {
   try {
-    return localStorage.getItem(STORAGE_KEY) || import.meta.env.VITE_CANALS_INBOX_EMAIL || "";
+    return localStorage.getItem(STORAGE_KEY) || import.meta.env.VITE_CANALS_INBOX_EMAIL || DEFAULT_INBOX_EMAIL;
   } catch {
-    return import.meta.env.VITE_CANALS_INBOX_EMAIL || "";
+    return import.meta.env.VITE_CANALS_INBOX_EMAIL || DEFAULT_INBOX_EMAIL;
   }
 }
 
